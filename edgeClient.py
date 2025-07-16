@@ -89,6 +89,7 @@ def alert(msg):
 # Validate that a person is seen within timeout
 def validate_person(frame):
     global yolo_detections
+    # Here begings the implementation of AI CV into the project
     results = model(frame, verbose=False)
     annotated_frame = results[0].plot()
     cv2.imshow("Tailgate detector", annotated_frame)
@@ -104,7 +105,7 @@ def validate_person(frame):
                 # Remove detections older than the window
                 yolo_detections = [t for t in yolo_detections if time.time() - t <= DETECTION_WINDOW]
                 return True
-     # Show camera feed and results for debugging
+     # Here ends the AI CV implementation
     return False
 
 # Handle each entry event
