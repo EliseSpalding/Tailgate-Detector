@@ -53,9 +53,8 @@ last_reported_entries = 0
 # Initialize AI model
 model = YOLO("yolo11n_ncnn_model", verbose=False)
 
-# Initialize video serial
-video_ser = serial.Serial(VIDEO_PORT, VIDEO_BAUD, timeout=1.0)
-time.sleep(2)  # Allow Arduino reset
+# Initialize video using default camera (Targetting Windows compatibility)
+cam = cv2.VideoCapture(0)
 
 # Start Bluetooth threads
 tof_thread = threading.Thread(target=tof_counter_thread, daemon=True)
@@ -231,59 +230,37 @@ def button_counter_thread():
 running = True
 try:
     while running:
-        # Read video data
-        chunk = video_ser.read(video_ser.in_waiting or 1)
-        if chunk:
-            buffer.extend(chunk)
-            last_byte_time = time.time()
-        
-        # Process frame if marker found
-        marker_pos = buffer.find(FRAME_MARKER)
-        if marker_pos >= 0:
-            frame_start = marker_pos + MARKER_LEN
-            if len(buffer) - frame_start >= FRAME_SIZE:
-                # Extract frame data
-                frame_data = buffer[frame_start:frame_start + FRAME_SIZE]
-                buffer = buffer[frame_start + FRAME_SIZE:]
-                frame_count += 1
-                
-                try:
-                    # Convert to OpenCV image
-                    frame = np.frombuffer(frame_data, dtype=np.uint8)
-                    frame = frame.reshape((HEIGHT, WIDTH))
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-                    
-                    # Person detection
-                    validate_person(rgb_frame)
-                    
-                    # Get TOF person detection data
-                    with tof_lock:
-                        people = tof_data["people"]
-                        entries = tof_data["entries"]
-                        exits = tof_data["exits"]
-                    
-                    with tof_lock:
-                        curr_reported_entries = int(tof_data['entries'])  # Current entries count reported by TOF
+        try:
+            # Obtain an OpenCV image
+            rgb_frame = cam.read()
+            
+            # Person detection
+            validate_person(rgb_frame)
+            
+            # Get TOF person detection data
+            with tof_lock:
+                people = tof_data["people"]
+                entries = tof_data["entries"]
+                exits = tof_data["exits"]
+            
+            with tof_lock:
+                curr_reported_entries = int(tof_data['entries'])  # Current entries count reported by TOF
 
-                        if curr_reported_entries != last_reported_entries:
-                            # Calculate the number of new entries
-                            new_entries = curr_reported_entries - last_reported_entries
+                if curr_reported_entries != last_reported_entries:
+                    # Calculate the number of new entries
+                    new_entries = curr_reported_entries - last_reported_entries
 
-                            # Update internal counter for valid positive changes
-                            if new_entries > 0:
-                                entries_internal += new_entries
-                                last_reported_entries = curr_reported_entries
-                                handle_entry_event(rgb_frame)
-                            else:
-                                # Handle unexpected resets or errors
-                                last_reported_entries = curr_reported_entries  
+                    # Update internal counter for valid positive changes
+                    if new_entries > 0:
+                        entries_internal += new_entries
+                        last_reported_entries = curr_reported_entries
+                        handle_entry_event(rgb_frame)
+                    else:
+                        # Handle unexpected resets or errors
+                        last_reported_entries = curr_reported_entries  
                         
-                except Exception as e:
-                    print(f"[VIDEO] Processing error: {str(e)}")
-                    
-        # Handle buffer overflow
-        elif len(buffer) > MARKER_LEN * 2:
-            buffer = buffer[-MARKER_LEN:]
+        except Exception as e:
+            print(f"[VIDEO] Processing error: {str(e)}")
        
        # Check for video timeout
         if time.time() - last_byte_time > 2.0:
@@ -294,5 +271,5 @@ try:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             running = False
 finally:
-    video_ser.close()
+    cam.release()
     cv2.destroyAllWindows()
